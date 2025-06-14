@@ -110,11 +110,14 @@ def handle_command(event):
             send_message(event['channel'], screenshot_path)
 
 # Listen for Slack events and handle commands
-@socket_client.on("message")
 def handle_message(client, event: SocketModeRequest):
+    """Process incoming messages."""
     if 'subtype' not in event.data:  # Ignore bot messages
         print("Received a message:", event.data)
         handle_command(event.data)
+
+# Register the message handler to the SocketModeClient
+socket_client.socket_mode_request_listeners.append(handle_message)
 
 # Start the Socket Mode client to listen for events
 def listen_to_slack_events():
