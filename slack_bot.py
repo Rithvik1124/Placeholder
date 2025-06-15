@@ -1,22 +1,22 @@
 import os
-import time
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
+from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.errors import SlackApiError
 
-# Get Slack Bot Token and App Token from environment variables
-slack_bot_token = os.getenv('SLACK_BOT_TOKEN')  # Bot token (xoxb-...)
-slack_app_token = os.getenv('SLACK_APP_TOKEN')  # App token (xapp-...)
+# Get tokens from environment variables
+slack_bot_token = os.getenv('SLACK_BOT_TOKEN')  # xoxb-...
+slack_app_token = os.getenv('SLACK_APP_TOKEN')  # xapp-...
 
-# Initialize WebClient and SocketModeClient
+# Initialize clients
 web_client = WebClient(token=slack_bot_token)
-socket_client = SocketModeClient(
-    app_token=slack_app_token,
-    web_client=web_client
-)
+socket_client = SocketModeClient(app_token=slack_app_token, web_client=web_client)
 
-# Send message to Slack channel
+# Get bot user ID so we can recognize mentions
+bot_user_id = web_client.auth_test()['user_id']
+
+# Function to send a message to a Slack channel
 def send_message(channel, text):
     try:
         response = web_client.chat_postMessage(channel=channel, text=text)
@@ -24,43 +24,48 @@ def send_message(channel, text):
     except SlackApiError as e:
         print(f"Error sending message: {e.response['error']}")
 
-# Handle incoming Slack messages
-def handle_message(client, event: SocketModeRequest):
-    print(f"Received event: {event.data}")  # Debug: print the full event data
-    
-    # Check if the message is from the bot itself (don't process bot's own messages)
-    if 'subtype' in event.data and event.data['subtype'] == 'bot_message':
-        print("Ignoring bot message.")
-        return
+# Handle incoming events from Slack
+def handle_message(client: SocketModeClient, event: SocketModeRequest):
+    if event.type == "events_api":
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=event.envelope_id))
 
-    # Extract message text and channel info
-    text = event.data.get('text', '')
-    channel = event.data.get('channel', 'general')
-    
-    print(f"Received message: {text} in channel: {channel}")  # Debug log
+        slack_event = event.payload.get("event", {})
+        print(f"Received event: {slack_event}")
 
-    # Check for the command in the message text
-    if "capture report" in text.lower():
-        print("Processing capture report command.")  # Debug log
-        
-        parts = text.split(' ')
-        if len(parts) < 4:
-            send_message(channel, "Invalid command format. Use: 'capture report <report_name> <date_range>'")
+        # Ignore bot messages
+        if slack_event.get("subtype") == "bot_message":
+            print("Ignoring bot message.")
             return
-        
-        report_name = ' '.join(parts[2:-1])
-        date_range = parts[-1]
-        
-        # For now, let's send a message back confirming the report and date range
-        send_message(channel, f"Processing report: {report_name} for date range: {date_range}")
 
-    else:
-        send_message(channel, "I didn't understand that. Please use the format: 'capture report <report_name> <date_range>'")
+        text = slack_event.get("text", "")
+        channel = slack_event.get("channel", "")
+        user = slack_event.get("user", "")
 
-# Register the event handler for SocketModeClient
+        # Check if the message mentions the bot and includes the command
+        if f"<@{bot_user_id}>" in text and "capture report" in text.lower():
+            parts = text.split()
+            try:
+                mention_index = parts.index(f"<@{bot_user_id}>")
+                command_parts = parts[mention_index + 1:]  # Get parts after mention
+
+                if len(command_parts) < 3 or command_parts[0].lower() != "capture" or command_parts[1].lower() != "report":
+                    send_message(channel, "Invalid format. Use: `@LookerScreenshot capture report <report_name> <date_range>`")
+                    return
+
+                report_name = ' '.join(command_parts[2:-1])
+                date_range = command_parts[-1]
+
+                send_message(channel, f"Processing report: {report_name} for date range: {date_range}")
+            except Exception as e:
+                print(f"Error parsing command: {e}")
+                send_message(channel, "Something went wrong while processing your request.")
+        else:
+            print("Message ignored: bot not mentioned or command not found.")
+
+# Register the handler
 socket_client.socket_mode_request_listeners.append(handle_message)
 
-# Start listening for Slack events
+# Start the bot
 def listen_to_slack_events():
     print("Bot is connected to Slack via Socket Mode...")
     socket_client.connect()
