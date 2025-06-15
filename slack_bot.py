@@ -35,7 +35,7 @@ def handle_message(client, event: SocketModeRequest):
 
     # Extract message text and channel info
     text = event.data.get('text', '')
-    channel = event.data.get('channel', '')
+    channel = event.data.get('channel', 'general')
     
     print(f"Received message: {text} in channel: {channel}")  # Debug log
 
