@@ -26,13 +26,36 @@ def send_message(channel, text):
 
 # Handle incoming Slack messages
 def handle_message(client, event: SocketModeRequest):
-    print(f"Received event: {event.data}")  # Debug: print the received event
-    text = event.data.get('text', '')
+    print(f"Received event: {event.data}")  # Debug: print the full event data
     
+    # Check if the message is from the bot itself (don't process bot's own messages)
+    if 'subtype' in event.data and event.data['subtype'] == 'bot_message':
+        print("Ignoring bot message.")
+        return
+
+    # Extract message text and channel info
+    text = event.data.get('text', '')
+    channel = event.data.get('channel', '')
+    
+    print(f"Received message: {text} in channel: {channel}")  # Debug log
+
+    # Check for the command in the message text
     if "capture report" in text.lower():
-        send_message(event.data['channel'], "Bot is processing your request...")
+        print("Processing capture report command.")  # Debug log
+        
+        parts = text.split(' ')
+        if len(parts) < 4:
+            send_message(channel, "Invalid command format. Use: 'capture report <report_name> <date_range>'")
+            return
+        
+        report_name = ' '.join(parts[2:-1])
+        date_range = parts[-1]
+        
+        # For now, let's send a message back confirming the report and date range
+        send_message(channel, f"Processing report: {report_name} for date range: {date_range}")
+
     else:
-        send_message(event.data['channel'], "I received your message!")
+        send_message(channel, "I didn't understand that. Please use the format: 'capture report <report_name> <date_range>'")
 
 # Register the event handler for SocketModeClient
 socket_client.socket_mode_request_listeners.append(handle_message)
